@@ -3,7 +3,7 @@
 /**
  * @copyright Copyright &copy; Kartik Visweswaran, Krajee.com, 2014
  * @package yii2-krajee-base
- * @version 1.1.0
+ * @version 1.4.0
  */
 
 namespace kartik\base;
@@ -27,7 +27,9 @@ class InputWidget extends \yii\widgets\InputWidget
     const LOAD_PROGRESS = '<div class="kv-plugin-loading">&nbsp;</div>';
 
     /**
-     * @var string the locale ID (e.g. 'fr', 'de') for the language to be used by the Select2 Widget.
+     * @var string the language configuration (e.g. 'fr-FR', 'zh-CN'). The format for the language/locale is 
+     * ll-CC where ll is a two or three letter lowercase code for a language according to ISO-639 and 
+     * CC is the country code according to ISO-3166.
      * If this property not set, then the current application language will be used.
      */
     public $language;
@@ -42,6 +44,11 @@ class InputWidget extends \yii\widgets\InputWidget
      */
     public $data = [];
 
+    /**
+     * @var string the name of the jQuery plugin
+     */
+    public $pluginName = '';
+    
     /**
      * @var array widget plugin options
      */
@@ -70,6 +77,11 @@ class InputWidget extends \yii\widgets\InputWidget
     /**
      * @var string the hashed variable to store the pluginOptions
      */
+    protected $_dataVar;
+    
+    /**
+     * @var string the hashed variable to store the pluginOptions
+     */
     protected $_hashVar;
 
     /**
@@ -82,6 +94,17 @@ class InputWidget extends \yii\widgets\InputWidget
      */
     protected $_loadIndicator = '';
 
+    /**
+     * @var string the two or three letter lowercase code 
+     * for the language according to ISO-639
+     */
+    protected $_lang = '';
+
+    /**
+     * @var string the language js file
+     */
+    protected $_langFile = '';
+    
 
     /**
      * @inheritdoc
@@ -89,6 +112,10 @@ class InputWidget extends \yii\widgets\InputWidget
     public function init()
     {
         parent::init();
+        if (!isset($this->language)) {
+            $this->language = Yii::$app->language;
+        }
+        $this->_lang = Config::getLang($this->language);
         if ($this->pluginLoading) {
             $this->_loadIndicator = self::LOAD_PROGRESS;
         }
@@ -98,26 +125,67 @@ class InputWidget extends \yii\widgets\InputWidget
             $this->value = $this->model[Html::getAttributeName($this->attribute)];
         }
         $view = $this->getView();
-        if (!isset($this->language)) {
-            $this->language = Yii::$app->language;
-        }
         WidgetAsset::register($view);
     }
 
     /**
+     * Sets HTML5 data variable
+     * @param string $name the plugin name
+     */
+    protected function setDataVar($name) {
+        $this->_dataVar = "data-krajee-{$name}";
+    }
+    
+    /**
      * Initialize the plugin language
      *
      * @param string $property the name of language property in [[pluginOptions]].
+     * @param boolean $full whether to use the full language string. Defaults to `false` 
+     * which is the 2 (or 3) digit ISO-639 format.
      * Defaults to 'language'.
      */
-    protected function initLanguage($property = 'language')
+    protected function initLanguage($property = 'language', $full = false)
     {
-        $lang = substr($this->language, 0, 2);
-        if (empty($this->pluginOptions[$property]) && $lang != 'en') {
-            $this->pluginOptions[$property] = $lang;
+        if (empty($this->pluginOptions[$property]) && $this->_lang != 'en') {
+            $this->pluginOptions[$property] = $full ? $this->language : $this->_lang;
         }
     }
-
+    /**
+     * Sets the language JS file if it exists
+     * @param string $assetPath the path to the assets
+     * @param string $filePath the path to the JS file with the file name prefix
+     * @param string $suffix the file name suffix - defaults to '.js'
+     */
+    protected function setLanguage($prefix, $assetPath = null, $filePath = null, $suffix = '.js') {
+        $pwd = Config::getCurrentDir($this);
+        $s = DIRECTORY_SEPARATOR;
+        if ($assetPath === null) {
+            $assetPath = "{$pwd}/assets/";
+        } elseif (substr($assetPath, -1) != '/') {
+            $assetPath = substr($assetPath, 0, -1);
+        }
+        if ($filePath === null) {
+            $filePath = "js/locales/";
+        } elseif (substr($filePath, -1) != '/') {
+            $filePath = substr($filePath, 0, -1);
+        }
+        $full = $filePath . $prefix . $this->language . $suffix;
+        $fullLower = $filePath . $prefix . strtolower($this->language) . $suffix;
+        $short = $filePath . $this->_lang . $suffix;
+        if (Config::fileExists($assetPath . $full)) {
+            $this->_langFile = $full;
+            $this->pluginOptions['language'] = $this->language;
+        } elseif (Config::fileExists($assetPath . $fullLower)) {
+            $this->_langFile = $fullLower;
+            $this->pluginOptions['language'] = strtolower($this->language);
+        }  elseif (Config::fileExists($assetPath . $short)) {
+            $this->_langFile = $short;
+            $this->pluginOptions['language'] = $this->_lang;
+        } else {
+            $this->_langFile = '';
+        }
+    }
+    
     /**
      * Adds an asset to the view
      *
@@ -156,7 +224,12 @@ class InputWidget extends \yii\widgets\InputWidget
         $checked = false;
         if ($type == 'radio' || $type == 'checkbox') {
             $this->options['value'] = $this->value;
-            $checked = ArrayHelper::remove($this->options, 'checked', false);
+            $checked = ArrayHelper::remove($this->options, 'checked', '');
+            if (empty($checked) && !empty($this->value)) {
+                $checked = ($this->value == 0) ? false : true;
+            } elseif (empty($checked)) {
+                $checked = false;
+            }
         }
         return $list ?
             Html::$input($this->name, $this->value, $this->data, $this->options) :
@@ -167,19 +240,16 @@ class InputWidget extends \yii\widgets\InputWidget
 
     /**
      * Generates a hashed variable to store the pluginOptions. The following special data attributes
-     * will also be setup for the input widget, that can be accessed through javascript:
-     * - 'data-plugin-options' will store the hashed variable storing the plugin options.
-     * - 'data-plugin-name' the name of the plugin
-     *
+     * will also be setup for the input widget, that can be accessed through javascript :
+     * - 'data-krajee-{name}' will store the hashed variable storing the plugin options. The {name}
+     *   tag will represent the plugin name (e.g. select2, typeahead etc.) - Fixes issue #6.
      * @param string $name the name of the plugin
-     * @author [Thiago Talma](https://github.com/thiagotalma)
      */
     protected function hashPluginOptions($name)
     {
         $this->_encOptions = empty($this->pluginOptions) ? '' : Json::encode($this->pluginOptions);
         $this->_hashVar = $name . '_' . hash('crc32', $this->_encOptions);
-        $this->options['data-plugin-name'] = $name;
-        $this->options['data-plugin-options'] = $this->_hashVar;
+        $this->options['data-krajee-' . $name] = $this->_hashVar;
     }
 
     /**

@@ -3,7 +3,7 @@
 /**
  * @copyright Copyright &copy; Kartik Visweswaran, Krajee.com, 2014
  * @package yii2-krajee-base
- * @version 1.1.0
+ * @version 1.4.0
  */
 
 namespace kartik\base;
@@ -21,6 +21,11 @@ use yii\web\View;
  */
 class Widget extends \yii\base\Widget
 {
+    /**
+     * @var array HTML attributes or other settings for widgets
+     */
+    public $options = [];
+
     /**
      * @var array widget plugin options
      */
@@ -40,9 +45,14 @@ class Widget extends \yii\base\Widget
     public $pluginEvents = [];
 
     /**
-     * @var array the options for the widget
+     * @var string the name of the jQuery plugin
      */
-    public $options = [];
+    protected $_pluginName;
+
+    /**
+     * @var string the hashed variable to store the pluginOptions
+     */
+    protected $_dataVar;
 
     /**
      * @var string the hashed variable to store the pluginOptions
@@ -63,6 +73,14 @@ class Widget extends \yii\base\Widget
         if (empty($this->options['id'])) {
             $this->options['id'] = $this->getId();
         }
+    }
+
+    /**
+     * Sets HTML5 data variable
+     * @param string $name the plugin name
+     */
+    protected function setDataVar($name) {
+        $this->_dataVar = "data-krajee-{$name}";
     }
 
     /**
