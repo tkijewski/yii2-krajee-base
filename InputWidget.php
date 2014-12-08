@@ -3,7 +3,7 @@
 /**
  * @copyright Copyright &copy; Kartik Visweswaran, Krajee.com, 2014
  * @package yii2-krajee-base
- * @version 1.4.0
+ * @version 1.5.0
  */
 
 namespace kartik\base;
@@ -33,6 +33,16 @@ class InputWidget extends \yii\widgets\InputWidget
      * If this property not set, then the current application language will be used.
      */
     public $language;
+    
+    /**
+     * @var boolean whether input is to be disabled
+     */
+    public $disabled = false;
+    
+    /**
+     * @var boolean whether input is to be readonly
+     */
+    public $readonly = false;
 
     /**
      * @var mixed show loading indicator while plugin loads
@@ -124,6 +134,7 @@ class InputWidget extends \yii\widgets\InputWidget
                 $this->attribute) : $this->options['name'];
             $this->value = $this->model[Html::getAttributeName($this->attribute)];
         }
+        $this->initDisability($this->options);
         $view = $this->getView();
         WidgetAsset::register($view);
     }
@@ -273,8 +284,25 @@ class InputWidget extends \yii\widgets\InputWidget
      */
     protected function registerPlugin($name, $element = null, $callback = null, $callbackCon = null)
     {
+        $script = $this->getPluginScript($name, $element, $callback, $callbackCon);
+        if (!empty($script)) {
+            $view = $this->getView();
+            $view->registerJs($script);
+        }
+    }
+
+    /**
+     * Returns the plugin registration script
+     *
+     * @param string $name the name of the plugin
+     * @param string $element the plugin target element
+     * @param string $callback the javascript callback function to be called after plugin loads
+     * @param string $callbackCon the javascript callback function to be passed to the plugin constructor
+     * @return the generated plugin script
+     */
+    protected function getPluginScript($name, $element = null, $callback = null, $callbackCon = null) {
         $id = $element == null ? "jQuery('#" . $this->options['id'] . "')" : $element;
-        $view = $this->getView();
+        $script = '';
         if ($this->pluginOptions !== false) {
             $this->registerPluginOptions($name, View::POS_HEAD);
             $script = "{$id}.{$name}({$this->_hashVar})";
@@ -282,22 +310,35 @@ class InputWidget extends \yii\widgets\InputWidget
                 $script = "{$id}.{$name}({$this->_hashVar}, {$callbackCon})";
             }
             if ($callback != null) {
-                $script = "jQuery.when({$script}).done({$callback});";
+                $script = "jQuery.when({$script}).done({$callback})";
             }
-            $view->registerJs($script);
+            $script .= ";\n";
         }
-
         if (!empty($this->pluginEvents)) {
             $js = [];
             foreach ($this->pluginEvents as $event => $handler) {
                 $function = new JsExpression($handler);
                 $js[] = "{$id}.on('{$event}', {$function});";
             }
-            $js = implode("\n", $js);
-            $view->registerJs($js);
+            $script .= implode("\n", $js) . "\n";
         }
+        return $script;
     }
 
+    /**
+     * Validates and sets disabled or readonly inputs
+     * @param array $options the HTML attributes for the input
+     */
+    protected function initDisability(&$options)
+    {
+        if ($this->disabled && !isset($options['disabled'])) {
+            $options['disabled'] = true;
+        }
+        if ($this->readonly && !isset($options['readonly'])) {
+            $options['readonly'] = true;
+        }
+    }
+    
     /**
      * Automatically convert the date format from PHP DateTime to Javascript DateTime format
      *
